@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(PORT=3002 npm start)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(kill:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run server:*)",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Bash(lsof:*)",
+      "Bash(fuser:*)"
+    ],
+    "deny": []
+  }
+}
