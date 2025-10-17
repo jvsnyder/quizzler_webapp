@@ -245,7 +245,16 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
 
       {session.status === 'active' && currentQuestion && currentQuestion.answerOptions && (
         <div className="card">
-          <h3>Live Results</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3>Live Results</h3>
+            <button 
+              className="btn btn-secondary" 
+              onClick={fetchResponses}
+              style={{ fontSize: '14px', padding: '8px 16px' }}
+            >
+              Refresh
+            </button>
+          </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
             <p><strong>Participants:</strong> {participantCount}</p>
             <p><strong>Round:</strong> {(session.currentRound || 1) === 1 ? 'Individual' : 'Group Discussion'}</p>
