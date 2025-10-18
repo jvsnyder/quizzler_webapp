@@ -156,6 +156,27 @@ app.post('/api/sessions/:sessionId/next-round', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/sessions/:sessionId/reveal-answer', (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+  
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  session.currentRound = 3; // New phase for answer reveal
+  
+  const currentQuestion = session.questions[session.currentQuestionIndex];
+  io.to(`session-${sessionId}`).emit('revealAnswer', {
+    question: currentQuestion,
+    questionIndex: session.currentQuestionIndex,
+    correctAnswer: currentQuestion.correctAnswer,
+    round: 3
+  });
+  
+  res.json({ success: true });
+});
+
 app.get('/api/sessions/:sessionId/results', (req, res) => {
   const { sessionId } = req.params;
   const sessionResponses = responses.get(sessionId);
@@ -360,6 +381,12 @@ app.get('/student/:sessionId', (req, res) => {
               showCurrentQuestion(data.question, data.questionIndex, data.round);
             });
             
+            socket.on('revealAnswer', (data) => {
+              // Clear submitted state and show answer reveal
+              document.getElementById('submitted').classList.add('hidden');
+              showAnswerReveal(data.question, data.questionIndex, data.correctAnswer);
+            });
+            
             socket.on('disconnect', () => {
               console.log('Disconnected from server');
             });
@@ -400,6 +427,12 @@ app.get('/student/:sessionId', (req, res) => {
               btn.onclick = () => selectAnswer(index);
               answerContainer.appendChild(btn);
             });
+            
+            // Reset submit button to default state
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.textContent = 'Submit Answer';
+            submitBtn.style.cssText = 'width: 100%; padding: 20px; font-size: 18px; background: #28a745; color: white; border: none; border-radius: 8px; margin-top: 20px;';
+            submitBtn.disabled = true;
             
             // Restore selected answer if switching players
             restoreSelectedAnswer();
@@ -516,6 +549,71 @@ app.get('/student/:sessionId', (req, res) => {
             
             updatePlayerButtons();
             restoreSelectedAnswer();
+          }
+          
+          function showAnswerReveal(question, questionIndex, correctAnswer) {
+            currentQuestion = question;
+            currentQuestionIndex = questionIndex;
+            currentRound = 3;
+            
+            document.getElementById('waiting').classList.add('hidden');
+            document.getElementById('submitted').classList.add('hidden');
+            document.getElementById('quiz').classList.remove('hidden');
+            
+            // Update round indicator
+            const roundIndicator = document.getElementById('roundIndicator');
+            roundIndicator.textContent = 'Correct Answer Revealed';
+            roundIndicator.style.background = '#fff3cd';
+            roundIndicator.style.color = '#856404';
+            
+            // Show player selector for 2 players
+            if (playerCount === 2) {
+              document.getElementById('playerSelector').classList.remove('hidden');
+              updatePlayerButtons();
+            }
+            
+            // Update question
+            document.getElementById('questionText').textContent = question.questionText;
+            
+            // Create answer buttons with correct answer highlighting
+            const answerContainer = document.getElementById('answerButtons');
+            answerContainer.innerHTML = '';
+            
+            const currentPlayerAnswerKey = 'player' + currentPlayer + '_q' + questionIndex + '_r2';
+            const selectedAnswer = answers[currentPlayerAnswerKey];
+            
+            question.answerOptions.forEach((option, index) => {
+              const btn = document.createElement('button');
+              btn.className = 'btn btn-large';
+              btn.disabled = true;
+              
+              const isCorrect = index === correctAnswer;
+              const wasSelected = selectedAnswer === index;
+              
+              if (isCorrect) {
+                btn.style.cssText = 'width: 100%; margin: 5px 0; background: #28a745; color: white; border: 2px solid #28a745; font-weight: 600;';
+                btn.textContent = option + ' ✓';
+              } else if (wasSelected) {
+                btn.style.cssText = 'width: 100%; margin: 5px 0; background: #dc3545; color: white; border: 2px solid #dc3545;';
+                btn.textContent = option + ' (Your answer)';
+              } else {
+                btn.style.cssText = 'width: 100%; margin: 5px 0; background: #f8f9fa; color: #333; border: 2px solid #dee2e6;';
+                btn.textContent = option;
+              }
+              
+              answerContainer.appendChild(btn);
+            });
+            
+            // Show feedback message
+            const submitBtn = document.getElementById('submitBtn');
+            if (selectedAnswer === correctAnswer) {
+              submitBtn.textContent = '🎉 Correct! Well done!';
+              submitBtn.style.cssText = 'width: 100%; padding: 20px; font-size: 18px; background: #28a745; color: white; border: none; border-radius: 8px; margin-top: 20px;';
+            } else {
+              submitBtn.textContent = 'The correct answer was: ' + question.answerOptions[correctAnswer];
+              submitBtn.style.cssText = 'width: 100%; padding: 20px; font-size: 16px; background: #6c757d; color: white; border: none; border-radius: 8px; margin-top: 20px;';
+            }
+            submitBtn.disabled = true;
           }
           
           // Check if session exists

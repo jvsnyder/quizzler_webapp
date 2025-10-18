@@ -4,13 +4,15 @@ const SessionCreator = ({ onCreateSession }) => {
   const [sessionName, setSessionName] = useState('');
   const [questions, setQuestions] = useState([{
     questionText: '',
-    answerOptions: ['', '']
+    answerOptions: ['', ''],
+    correctAnswer: 0
   }]);
 
   const addQuestion = () => {
     setQuestions([...questions, {
       questionText: '',
-      answerOptions: ['', '']
+      answerOptions: ['', ''],
+      correctAnswer: 0
     }]);
   };
 
@@ -36,6 +38,10 @@ const SessionCreator = ({ onCreateSession }) => {
     const updatedQuestions = [...questions];
     if (updatedQuestions[questionIndex].answerOptions.length > 2) {
       updatedQuestions[questionIndex].answerOptions.splice(optionIndex, 1);
+      // Adjust correct answer index if needed
+      if (updatedQuestions[questionIndex].correctAnswer >= optionIndex) {
+        updatedQuestions[questionIndex].correctAnswer = Math.max(0, updatedQuestions[questionIndex].correctAnswer - 1);
+      }
       setQuestions(updatedQuestions);
     }
   };
@@ -68,7 +74,8 @@ const SessionCreator = ({ onCreateSession }) => {
       name: sessionName,
       questions: questions.map(q => ({
         questionText: q.questionText.trim(),
-        answerOptions: q.answerOptions.map(option => option.trim())
+        answerOptions: q.answerOptions.map(option => option.trim()),
+        correctAnswer: q.correctAnswer
       }))
     });
   };
@@ -120,7 +127,14 @@ const SessionCreator = ({ onCreateSession }) => {
             <div className="form-group">
               <label className="form-label">Answer Options</label>
               {question.answerOptions.map((option, optionIndex) => (
-                <div key={optionIndex} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <div key={optionIndex} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                  <input
+                    type="radio"
+                    name={`correct-${questionIndex}`}
+                    checked={question.correctAnswer === optionIndex}
+                    onChange={() => updateQuestion(questionIndex, 'correctAnswer', optionIndex)}
+                    style={{ marginRight: '8px' }}
+                  />
                   <input
                     type="text"
                     className="form-input"
@@ -128,6 +142,7 @@ const SessionCreator = ({ onCreateSession }) => {
                     onChange={(e) => updateAnswerOption(questionIndex, optionIndex, e.target.value)}
                     placeholder={`Answer option ${optionIndex + 1}`}
                     required
+                    style={{ flex: 1 }}
                   />
                   {question.answerOptions.length > 2 && (
                     <button
@@ -141,6 +156,10 @@ const SessionCreator = ({ onCreateSession }) => {
                   )}
                 </div>
               ))}
+              
+              <p style={{ fontSize: '14px', color: '#666', marginTop: '8px', marginBottom: '8px' }}>
+                Select the radio button next to the correct answer
+              </p>
               
               {question.answerOptions.length < 6 && (
                 <button

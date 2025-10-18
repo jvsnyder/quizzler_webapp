@@ -230,9 +230,13 @@ npm run build
 ```
 
 #### Testing
-- No test scripts currently configured
-- Client uses react-scripts test framework
-- Manual testing through browser interfaces
+```bash
+# Run frontend tests (in client directory)
+cd client && npm test
+
+# No backend test scripts currently configured
+# Manual testing through browser interfaces
+```
 
 #### Production Deployment
 ```bash
@@ -270,6 +274,7 @@ pm2 restart quizzler
 - `POST /api/sessions/:id/next-round` - Advance round
 - `POST /api/sessions/:id/submit` - Submit answer
 - `GET /api/sessions/:id/results` - Get results
+- `DELETE /api/sessions/:id` - Delete session
 
 #### WebSocket Events
 **Student Events:**
@@ -285,6 +290,12 @@ pm2 restart quizzler
 - Production mode serves React build from Express static middleware
 - Device IDs are generated and stored in localStorage for tracking responses
 - Answer persistence allows player switching without losing selections
+
+### Current Implementation Status
+- **Data Persistence**: Currently uses in-memory storage (data lost on server restart)
+- **Scalability**: Limited to single server instance due to in-memory storage
+- **Production Ready**: Requires database integration for persistent storage
+- **Security**: Basic session-based access, no authentication system
 
 ## Deployment Options
 

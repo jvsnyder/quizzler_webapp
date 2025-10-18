@@ -12,13 +12,14 @@ const StudentApp = () => {
   })());
   
   const [gameState, setGameState] = useState({
-    phase: 'setup', // setup, waiting, answering, submitted
+    phase: 'setup', // setup, waiting, answering, submitted, answer-revealed
     playerCount: 1,
     currentPlayer: 1,
     session: null,
     currentQuestion: null,
     currentQuestionIndex: -1,
     currentRound: 1,
+    correctAnswer: null,
     answers: {} // stores answers for both players
   });
 
@@ -57,6 +58,7 @@ const StudentApp = () => {
         currentQuestionIndex: data.questionIndex,
         currentRound: data.round,
         phase: 'answering',
+        correctAnswer: null,
         answers: {}
       }));
     });
@@ -66,6 +68,15 @@ const StudentApp = () => {
         ...prev,
         currentRound: data.round,
         phase: 'answering'
+      }));
+    });
+
+    newSocket.on('revealAnswer', (data) => {
+      setGameState(prev => ({
+        ...prev,
+        currentRound: data.round,
+        correctAnswer: data.correctAnswer,
+        phase: 'answer-revealed'
       }));
     });
 
@@ -242,6 +253,78 @@ const StudentApp = () => {
     );
   };
 
+  const renderAnswerRevealed = () => {
+    const { currentQuestion, correctAnswer, playerCount, currentPlayer } = gameState;
+    const currentAnswer = getCurrentAnswer();
+
+    return (
+      <div className="student-container">
+        <div className="card">
+          <div className="round-indicator answer-revealed">
+            Correct Answer Revealed
+          </div>
+
+          {playerCount === 2 && (
+            <div className="player-selector">
+              <button 
+                className={`btn player-toggle ${currentPlayer === 1 ? 'active' : ''}`}
+                onClick={() => switchPlayer(1)}
+              >
+                Player 1
+              </button>
+              <button 
+                className={`btn player-toggle ${currentPlayer === 2 ? 'active' : ''}`}
+                onClick={() => switchPlayer(2)}
+              >
+                Player 2
+              </button>
+            </div>
+          )}
+
+          <div className="question-text">
+            {currentQuestion?.questionText}
+          </div>
+
+          <div className="answer-options">
+            {currentQuestion?.answerOptions.map((option, index) => {
+              const isCorrect = index === correctAnswer;
+              const wasSelected = currentAnswer === index;
+              
+              return (
+                <button
+                  key={index}
+                  className={`btn btn-large btn-block answer-option 
+                    ${isCorrect ? 'correct-answer' : ''} 
+                    ${wasSelected && !isCorrect ? 'selected-wrong' : ''}
+                    ${wasSelected && isCorrect ? 'selected-correct' : ''}
+                  `}
+                  disabled
+                >
+                  {option}
+                  {isCorrect && ' ✓'}
+                  {wasSelected && isCorrect && ' (Your answer)'}
+                  {wasSelected && !isCorrect && ' (Your answer)'}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="status-message">
+            {currentAnswer === correctAnswer ? (
+              <p className="correct-message">🎉 Correct! Well done!</p>
+            ) : (
+              <p className="incorrect-message">The correct answer was: {currentQuestion?.answerOptions[correctAnswer]}</p>
+            )}
+          </div>
+
+          <div className="waiting-message" style={{ marginTop: '20px' }}>
+            <p>Waiting for teacher to continue...</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSubmitted = () => (
     <div className="student-container">
       <div className="card">
@@ -278,6 +361,8 @@ const StudentApp = () => {
       return renderAnswering();
     case 'submitted':
       return renderSubmitted();
+    case 'answer-revealed':
+      return renderAnswerRevealed();
     case 'completed':
       return renderCompleted();
     default:

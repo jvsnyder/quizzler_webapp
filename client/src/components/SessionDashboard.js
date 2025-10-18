@@ -95,6 +95,18 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
     }
   };
 
+  const revealAnswer = async () => {
+    if (!session?.id) return;
+    try {
+      await fetch(`/api/sessions/${session.id}/reveal-answer`, {
+        method: 'POST',
+      });
+      onUpdateSession({ ...session, currentRound: 3 });
+    } catch (error) {
+      console.error('Error revealing answer:', error);
+    }
+  };
+
   const getCurrentQuestionResponses = () => {
     if (!session || !session.questions || !Array.isArray(session.questions)) return [];
     return responses.filter(r => 
@@ -198,6 +210,15 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
             
             {session.status === 'active' && session.currentRound === 2 && (
               <button
+                className="btn btn-warning"
+                onClick={revealAnswer}
+              >
+                Reveal Correct Answer
+              </button>
+            )}
+            
+            {session.status === 'active' && session.currentRound === 3 && (
+              <button
                 className="btn btn-primary"
                 onClick={nextQuestion}
               >
@@ -219,7 +240,16 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
                 <strong>Answer Options:</strong>
                 <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
                   {currentQuestion.answerOptions.map((option, index) => (
-                    <li key={index}>{option}</li>
+                    <li key={index} style={{
+                      backgroundColor: session.currentRound === 3 && currentQuestion.correctAnswer === index ? '#28a745' : 'transparent',
+                      color: session.currentRound === 3 && currentQuestion.correctAnswer === index ? 'white' : 'inherit',
+                      padding: session.currentRound === 3 && currentQuestion.correctAnswer === index ? '4px 8px' : '0',
+                      borderRadius: session.currentRound === 3 && currentQuestion.correctAnswer === index ? '4px' : '0',
+                      fontWeight: session.currentRound === 3 && currentQuestion.correctAnswer === index ? 'bold' : 'normal'
+                    }}>
+                      {option}
+                      {session.currentRound === 3 && currentQuestion.correctAnswer === index && ' ✓'}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -257,7 +287,11 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
             <p><strong>Participants:</strong> {participantCount}</p>
-            <p><strong>Round:</strong> {(session.currentRound || 1) === 1 ? 'Individual' : 'Group Discussion'}</p>
+            <p><strong>Round:</strong> {
+              (session.currentRound || 1) === 1 ? 'Individual' : 
+              (session.currentRound || 1) === 2 ? 'Group Discussion' : 
+              'Answer Revealed'
+            }</p>
           </div>
 
           <div className="results-chart">
