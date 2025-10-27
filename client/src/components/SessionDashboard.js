@@ -107,6 +107,46 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
     }
   };
 
+  const goBackRound = async () => {
+    if (!session?.id) return;
+    try {
+      const response = await fetch(`/api/sessions/${session.id}/back-round`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      
+      if (response.ok) {
+        onUpdateSession({ ...session, currentRound: data.currentRound });
+      } else {
+        alert(data.error || 'Cannot go back further');
+      }
+    } catch (error) {
+      console.error('Error going back round:', error);
+    }
+  };
+
+  const goBackQuestion = async () => {
+    if (!session?.id) return;
+    try {
+      const response = await fetch(`/api/sessions/${session.id}/back-question`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      
+      if (response.ok) {
+        onUpdateSession({ 
+          ...session, 
+          currentQuestionIndex: data.currentQuestionIndex,
+          currentRound: 1 
+        });
+      } else {
+        alert(data.error || 'Cannot go back further');
+      }
+    } catch (error) {
+      console.error('Error going back question:', error);
+    }
+  };
+
   const getCurrentQuestionResponses = () => {
     if (!session || !session.questions || !Array.isArray(session.questions)) return [];
     return responses.filter(r => 
@@ -117,31 +157,50 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
 
   const getResponseCounts = () => {
     if (!session || !session.questions || !Array.isArray(session.questions)) {
-      console.log('getResponseCounts: session or questions invalid');
       return {};
     }
     
     const currentResponses = getCurrentQuestionResponses();
     const currentQuestionIndex = session.currentQuestionIndex || 0;
     
-    // Check if currentQuestionIndex is within bounds
     if (currentQuestionIndex < 0 || currentQuestionIndex >= session.questions.length) {
-      console.log('getResponseCounts: currentQuestionIndex out of bounds', currentQuestionIndex, session.questions.length);
       return {};
     }
     
     const currentQuestion = session.questions[currentQuestionIndex];
     
-    if (!currentQuestion || !currentQuestion.answerOptions || !Array.isArray(currentQuestion.answerOptions)) {
-      console.log('getResponseCounts: currentQuestion or answerOptions invalid', currentQuestion);
+    if (!currentQuestion) {
+      return {};
+    }
+
+    // Handle pure freetext questions
+    if (currentQuestion.isFreetext) {
+      return { freetextResponses: currentResponses };
+    }
+
+    if (!currentQuestion.answerOptions || !Array.isArray(currentQuestion.answerOptions)) {
       return {};
     }
 
     const counts = {};
+    const otherResponses = [];
+    
     try {
+      // Count regular multiple choice responses
       currentQuestion.answerOptions.forEach((_, index) => {
-        counts[index] = currentResponses.filter(r => r.selectedAnswer === index).length;
+        counts[index] = currentResponses.filter(r => !r.isOtherOption && r.selectedAnswer === index).length;
       });
+      
+      // Collect "Other" responses if hasFreetextOption is enabled
+      if (currentQuestion.hasFreetextOption) {
+        currentResponses.forEach(response => {
+          if (response.isOtherOption) {
+            otherResponses.push(response);
+          }
+        });
+        counts.other = otherResponses.length;
+        counts.otherResponses = otherResponses;
+      }
     } catch (error) {
       console.error('getResponseCounts: Error in forEach', error);
       return {};
@@ -200,33 +259,62 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
             )}
             
             {session.status === 'active' && session.currentRound === 1 && (
-              <button
-                className="btn btn-primary"
-                onClick={nextRound}
-              >
-                Start Round 2 (Group Discussion)
-              </button>
+              <>
+                <button
+                  className="btn btn-primary"
+                  onClick={nextRound}
+                >
+                  Start Round 2 (Group Discussion)
+                </button>
+                {(session.currentQuestionIndex || 0) > 0 && (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={goBackQuestion}
+                    style={{ marginLeft: '8px' }}
+                  >
+                    ← Back to Previous Question
+                  </button>
+                )}
+              </>
             )}
             
             {session.status === 'active' && session.currentRound === 2 && (
-              <button
-                className="btn btn-warning"
-                onClick={revealAnswer}
-              >
-                Reveal Correct Answer
-              </button>
+              <>
+                <button
+                  className="btn btn-warning"
+                  onClick={revealAnswer}
+                >
+                  Reveal Correct Answer
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={goBackRound}
+                  style={{ marginLeft: '8px' }}
+                >
+                  ← Back to Round 1
+                </button>
+              </>
             )}
             
             {session.status === 'active' && session.currentRound === 3 && (
-              <button
-                className="btn btn-primary"
-                onClick={nextQuestion}
-              >
-                {currentQuestionIndex + 1 < session.questions.length
-                  ? 'Next Question' 
-                  : 'Complete Session'
-                }
-              </button>
+              <>
+                <button
+                  className="btn btn-primary"
+                  onClick={nextQuestion}
+                >
+                  {currentQuestionIndex + 1 < session.questions.length
+                    ? 'Next Question' 
+                    : 'Complete Session'
+                  }
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={goBackRound}
+                  style={{ marginLeft: '8px' }}
+                >
+                  ← Back to Round 2
+                </button>
+              </>
             )}
           </div>
 
@@ -273,7 +361,7 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
         </div>
       </div>
 
-      {session.status === 'active' && currentQuestion && currentQuestion.answerOptions && (
+      {session.status === 'active' && currentQuestion && (
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3>Live Results</h3>
@@ -295,33 +383,124 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
           </div>
 
           <div className="results-chart">
-            {currentQuestion.answerOptions && currentQuestion.answerOptions.map((option, index) => {
-              const count = (responseCounts && responseCounts[index]) || 0;
-              const percentage = participantCount > 0 ? (count / participantCount * 100).toFixed(1) : 0;
-              
-              return (
-                <div key={index} style={{ marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span>{option}</span>
-                    <span>{count} ({percentage}%)</span>
+            {currentQuestion.isFreetext ? (
+              <div>
+                <h4 style={{ marginBottom: '16px' }}>Text Responses:</h4>
+                {responseCounts.freetextResponses && responseCounts.freetextResponses.length > 0 ? (
+                  <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {responseCounts.freetextResponses.map((response, index) => (
+                      <div key={index} style={{
+                        background: '#f8f9fa',
+                        padding: '12px 16px',
+                        margin: '8px 0',
+                        borderRadius: '8px',
+                        borderLeft: '4px solid #007bff'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', color: '#666', fontWeight: '600' }}>
+                            Device {response.deviceId.substring(7, 12)} - Player {response.playerNumber}
+                          </span>
+                          <span style={{ fontSize: '12px', color: '#666' }}>
+                            {new Date(response.submittedAt).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p style={{ margin: '0', fontStyle: 'italic', wordWrap: 'break-word' }}>
+                          "{response.selectedAnswer}"
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                  <div style={{ 
-                    width: '100%', 
-                    height: '20px', 
-                    backgroundColor: '#e9ecef', 
-                    borderRadius: '4px',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${percentage}%`,
-                      height: '100%',
-                      backgroundColor: '#007bff',
-                      transition: 'width 0.3s ease'
-                    }} />
+                ) : (
+                  <p style={{ color: '#666', fontStyle: 'italic', textAlign: 'center', padding: '20px' }}>
+                    No text responses submitted yet.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div>
+                {currentQuestion.answerOptions && currentQuestion.answerOptions.map((option, index) => {
+                  const count = (responseCounts && responseCounts[index]) || 0;
+                  const percentage = participantCount > 0 ? (count / participantCount * 100).toFixed(1) : 0;
+                  
+                  return (
+                    <div key={index} style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span>{option}</span>
+                        <span>{count} ({percentage}%)</span>
+                      </div>
+                      <div style={{ 
+                        width: '100%', 
+                        height: '20px', 
+                        backgroundColor: '#e9ecef', 
+                        borderRadius: '4px',
+                        overflow: 'hidden'
+                      }}>
+                        <div style={{
+                          width: `${percentage}%`,
+                          height: '100%',
+                          backgroundColor: '#007bff',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                
+                {currentQuestion.hasFreetextOption && (
+                  <div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span>Other (specify)</span>
+                        <span>{(responseCounts && responseCounts.other) || 0} ({participantCount > 0 ? (((responseCounts && responseCounts.other) || 0) / participantCount * 100).toFixed(1) : 0}%)</span>
+                      </div>
+                      <div style={{ 
+                        width: '100%', 
+                        height: '20px', 
+                        backgroundColor: '#e9ecef', 
+                        borderRadius: '4px',
+                        overflow: 'hidden'
+                      }}>
+                        <div style={{
+                          width: `${participantCount > 0 ? (((responseCounts && responseCounts.other) || 0) / participantCount * 100).toFixed(1) : 0}%`,
+                          height: '100%',
+                          backgroundColor: '#28a745',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+                    
+                    {responseCounts && responseCounts.otherResponses && responseCounts.otherResponses.length > 0 && (
+                      <div style={{ marginTop: '20px' }}>
+                        <h4 style={{ marginBottom: '12px', fontSize: '16px' }}>Custom Responses:</h4>
+                        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                          {responseCounts.otherResponses.map((response, index) => (
+                            <div key={index} style={{
+                              background: '#f8f9fa',
+                              padding: '8px 12px',
+                              margin: '4px 0',
+                              borderRadius: '6px',
+                              borderLeft: '4px solid #28a745'
+                            }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2px' }}>
+                                <span style={{ fontSize: '12px', color: '#666', fontWeight: '600' }}>
+                                  Device {response.deviceId.substring(7, 12)} - Player {response.playerNumber}
+                                </span>
+                                <span style={{ fontSize: '12px', color: '#666' }}>
+                                  {new Date(response.submittedAt).toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <p style={{ margin: '0', fontStyle: 'italic', wordWrap: 'break-word', fontSize: '14px' }}>
+                                "{response.selectedAnswer}"
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -334,6 +513,7 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
               <tr>
                 <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>#</th>
                 <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Question</th>
+                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Type</th>
                 <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Answer Options</th>
                 <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Status</th>
               </tr>
@@ -348,9 +528,40 @@ const SessionDashboard = ({ session, onBack, onUpdateSession }) => {
                     {question.questionText || 'No question text'}
                   </td>
                   <td style={{ padding: '12px', borderBottom: '1px solid #dee2e6' }}>
-                    {question.answerOptions && Array.isArray(question.answerOptions) 
-                      ? question.answerOptions.join(', ') 
-                      : 'No answer options'}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{
+                        backgroundColor: question.isFreetext ? '#e7f3ff' : '#f0f9ff',
+                        color: question.isFreetext ? '#0066cc' : '#0078d4',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        width: 'fit-content'
+                      }}>
+                        {question.isFreetext ? 'Free Text' : 'Multiple Choice'}
+                      </span>
+                      {!question.isFreetext && question.hasFreetextOption && (
+                        <span style={{
+                          backgroundColor: '#e7f3ff',
+                          color: '#0066cc',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          width: 'fit-content'
+                        }}>
+                          + Other Option
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ padding: '12px', borderBottom: '1px solid #dee2e6' }}>
+                    {question.isFreetext 
+                      ? 'Open text response'
+                      : (question.answerOptions && Array.isArray(question.answerOptions) 
+                          ? question.answerOptions.join(', ') + (question.hasFreetextOption ? ', Other (specify)' : '')
+                          : 'No answer options')
+                    }
                   </td>
                   <td style={{ padding: '12px', borderBottom: '1px solid #dee2e6' }}>
                     {index < currentQuestionIndex ? 'Completed' : 

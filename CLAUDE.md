@@ -17,18 +17,19 @@ A dual web application system for interactive classroom quizzing designed for 16
 ### Student Web App ("Quizzler")
 - Browser-based interface accessible via QR code
 - Player selection: 1 player or 2 players per device
-- Two-round answering system:
+- Three-phase answering system:
   - Round 1: Individual answers
   - Round 2: Group discussion and consensus answers
+  - Round 3: Correct answer reveal with educational feedback
 - Player switching functionality with answer persistence
 - Real-time question display synchronized with teacher's presentation
 
 ### Administrative Web App
-- Question management interface
+- Question management interface with correct answer selection
 - Configurable answer options (variable number of choices)
 - Live results dashboard showing student responses
-- Question progression controls
-- Session management
+- Three-phase question progression controls with back navigation
+- Session management with undo functionality
 
 ## Technical Requirements
 
@@ -58,7 +59,7 @@ Sessions:
 - session_id (primary key)
 - created_at
 - current_question_index
-- current_round (1 or 2)
+- current_round (1, 2, or 3)
 - status (active/inactive)
 
 Questions:
@@ -66,6 +67,7 @@ Questions:
 - session_id (foreign key)
 - question_text
 - answer_options (JSON array)
+- correct_answer (index of correct option)
 - order_index
 
 Responses:
@@ -74,7 +76,7 @@ Responses:
 - question_id (foreign key)
 - device_id (to track unique devices)
 - player_number (1 or 2)
-- round_number (1 or 2)
+- round_number (1, 2, or 3)
 - selected_answer
 - submitted_at
 ```
@@ -106,8 +108,10 @@ Responses:
    - Clear visual indication of current player
 
 4. **Round Management**
-   - Automatic progression from Round 1 to Round 2
+   - Automatic progression: Round 1 → Round 2 → Round 3 (Answer Reveal)
    - Different UI states for each round
+   - Correct/incorrect answer highlighting in Round 3
+   - Educational feedback with celebratory messages
    - Wait screens between questions
 
 ### Administrative Interface
@@ -119,6 +123,7 @@ Responses:
 2. **Question Setup**
    - Add multiple questions to session
    - Configure number of answer choices (2-6 options)
+   - Select correct answer using radio buttons
    - Edit answer text
    - Reorder questions
 
@@ -129,9 +134,11 @@ Responses:
    - Device/player participation metrics
 
 4. **Session Controls**
-   - Advance to next question
-   - Switch between rounds
-   - Reset responses
+   - Advance to next question with back navigation
+   - Switch between rounds with undo functionality  
+   - Reveal correct answers to students
+   - Back buttons for previous question/round
+   - Reset responses (automatic on back navigation)
    - End session
 
 ## User Flow
@@ -149,15 +156,16 @@ Responses:
 ### Teacher Flow
 1. Access admin dashboard
 2. Create new session
-3. Add questions and answer options
+3. Add questions, answer options, and select correct answers
 4. Display QR code for students
 5. Start session
 6. Display question on presentation
-7. Monitor live responses
-8. Advance to Round 2
-9. Monitor group responses
-10. Advance to next question
-11. Repeat steps 6-10
+7. Monitor live responses (Round 1: Individual)
+8. Advance to Round 2 (Group Discussion)
+9. Monitor group consensus responses
+10. Reveal correct answer (Round 3)
+11. Advance to next question or use back navigation if needed
+12. Repeat steps 6-11
 
 ## Technical Stack Recommendations
 - **Frontend**: React.js with responsive CSS
@@ -216,26 +224,41 @@ quizzler/
 # Install all dependencies (server + client)
 npm run install-all
 
-# Start development (both server and client)
+# Start development (both server and client) - React dev server on :3000, Express on :8000
 npm run dev
 
-# Start only backend server
+# Start only backend server on port 8000
 npm run server
 
-# Start only frontend (in separate terminal)
+# Start only frontend React dev server on port 3000 (in separate terminal)
 npm run client
 
-# Build client for production
+# Build client for production and start production server
+npm run build && npm start
+
+# Build client only (creates client/build directory)
 npm run build
 ```
+
+#### Development Server Access
+- **Development Mode**: Frontend http://localhost:3000 (proxies API to :8000)
+- **Production Mode**: Full app http://localhost:8000 (serves built React + API)
+- **Admin Creator**: http://localhost:8000/admin (embedded HTML interface)
+- **Session Dashboard**: http://localhost:8000/dashboard/:sessionId (live session management)
+- **Student Interface**: http://localhost:8000/student/:sessionId (built-in HTML interface)
 
 #### Testing
 ```bash
 # Run frontend tests (in client directory)
 cd client && npm test
 
+# Manual testing workflow:
+# 1. Access /admin to create session with questions
+# 2. Access / to see session list with Manage/Delete buttons  
+# 3. Click Manage to open /dashboard/:sessionId for live control
+# 4. Access /student/:sessionId for student interface testing
+
 # No backend test scripts currently configured
-# Manual testing through browser interfaces
 ```
 
 #### Production Deployment
@@ -245,6 +268,24 @@ pm2 start ecosystem.config.js
 pm2 status
 pm2 logs quizzler
 pm2 restart quizzler
+
+# Direct production start (alternative)
+npm run build && NODE_ENV=production npm start
+```
+
+#### Troubleshooting Local Development
+```bash
+# If port conflicts occur, kill processes:
+pkill -f node
+pkill -f nodemon
+
+# Check what's using ports:
+ss -tlnp | grep 3000
+ss -tlnp | grep 3001
+ss -tlnp | grep 8000
+
+# WSL networking issues: Server runs on port 8000 by default
+# Client proxy should point to http://localhost:8000 in client/package.json
 ```
 
 ### Architecture Notes
@@ -272,6 +313,9 @@ pm2 restart quizzler
 - `POST /api/sessions/:id/start` - Start session
 - `POST /api/sessions/:id/next-question` - Advance question
 - `POST /api/sessions/:id/next-round` - Advance round
+- `POST /api/sessions/:id/reveal-answer` - Reveal correct answer (Round 3)
+- `POST /api/sessions/:id/back-round` - Go back one round with answer clearing
+- `POST /api/sessions/:id/back-question` - Go back one question with answer clearing
 - `POST /api/sessions/:id/submit` - Submit answer
 - `GET /api/sessions/:id/results` - Get results
 - `DELETE /api/sessions/:id` - Delete session
@@ -279,29 +323,147 @@ pm2 restart quizzler
 #### WebSocket Events
 **Student Events:**
 - `joinSession`, `sessionJoined`, `sessionStarted`
-- `nextQuestion`, `nextRound`, `sessionCompleted`
+- `nextQuestion`, `nextRound`, `revealAnswer`, `sessionCompleted`
 
 **Admin Events:**
 - `joinAdminSession`, `newResponse`
 
+**Event Data Structures:**
+- `nextQuestion`: { question, questionIndex, round: 1 }
+- `nextRound`: { question, questionIndex, round: 2 }
+- `revealAnswer`: { question, questionIndex, correctAnswer, round: 3 }
+
 ### Development Notes
-- The server includes a temporary HTML student interface at `/student/:sessionId` for testing
-- Client app proxies API requests to backend via package.json proxy setting
+- **Dual Student Interfaces**: Server includes both a built-in HTML student interface at `/student/:sessionId` AND a React-based interface. The HTML interface is currently the primary working interface with full free-text support.
+- Client app proxies API requests to backend via package.json proxy setting (client/package.json proxy: "http://localhost:8000")
 - Production mode serves React build from Express static middleware
 - Device IDs are generated and stored in localStorage for tracking responses
 - Answer persistence allows player switching without losing selections
+- Back navigation automatically clears responses to prevent double-counting
+- Three-phase system provides educational value through answer revelation
+- Correct answer selection uses radio button interface for intuitive admin experience
+
+### Critical Development Information
+- **Server Port**: Always runs on port 8000 (not 3001 as originally documented)
+- **Free Text Implementation**: Fully implemented in the HTML student interface (`/student/:sessionId`) with support for mixed-mode questions (multiple choice + free text option)
+- **Question Property Names**: Questions use `questionText` property (not `text`) - this is critical for proper data flow
+- **React Dev Server Issues**: May require hard refresh (Ctrl+Shift+R) or cache clearing when making changes. The HTML interface reloads automatically via nodemon.
+
+### Current Working Configuration (As of Latest Development)
+- **Primary Student Interface**: `/student/:sessionId` (HTML-based, fully functional)
+- **Admin Interface**: `/admin` (HTML-based) and `/dashboard/:sessionId` (React-based)
+- **Free Text Support**: Complete in HTML student interface with visual styling
+- **Question Data Structure**: 
+  ```javascript
+  {
+    questionText: "Question content",  // NOT "text"
+    answerOptions: ["option1", "option2"],
+    correctAnswer: 0,
+    hasFreetextOption: true,  // For mixed mode (MC + free text)
+    isFreetext: false         // For pure free text questions
+  }
+  ```
+- **Response Submission**: Includes `isOtherOption` flag for free text responses
+
+### Common Development Issues & Solutions
+- **Free Text Not Showing**: Check question has `hasFreetextOption: true` and refresh browser cache
+- **Port Conflicts**: Server runs on 8000, client proxies from 3000 to 8000 (NOT 3001)
+- **React Changes Not Updating**: Try hard refresh, clear cache, or use the HTML interface for immediate testing
+- **Session Not Found**: Session IDs are UUIDs - ensure exact match including trailing characters
+
+### Question Type System Implementation
+The application supports three distinct question types through question object flags:
+
+**Multiple Choice (default)**: `isFreetext: false, hasFreetextOption: false`
+- Standard multiple choice with 2-6 predefined options
+- Correct answer stored as index number
+- Used for traditional quiz questions with clear correct answers
+
+**Mixed Mode**: `isFreetext: false, hasFreetextOption: true` 
+- Multiple choice options PLUS free text "Other" response capability
+- Supports both structured and open-ended responses in one question
+- Admin interface shows "Add Free Text Response" option
+
+**Free Text Only**: `isFreetext: true`
+- Pure text input with no predefined options
+- Used for open-ended questions requiring detailed answers
+- Admin interface shows "Free Text Response Only" option
+
+### Admin Interface Architecture
+Three distinct admin interfaces with different purposes:
+
+1. **Session Creator** (`/admin` route): Embedded HTML interface for question building
+   - Dynamic question type switching with conditional UI display
+   - Real-time answer option management (add/remove options)
+   - Client-side validation before submission
+   - Question type radio buttons with live preview
+
+2. **Session Dashboard** (`/dashboard/:sessionId`): Live session management
+   - Real-time response monitoring via WebSocket events
+   - Session control buttons for phase progression
+   - QR code generation for student access
+   - Response aggregation display with device/player tracking
+
+3. **React Client Integration**: Production frontend served from `/`
+   - React Router handles navigation between views
+   - Development proxy routes API calls to Express server
+   - Separation: embedded HTML for admin tools, React for student interface
+
+### Data Storage and Response Management
+**In-Memory Storage Architecture:**
+- Sessions and responses stored in JavaScript Maps (non-persistent)
+- Compound response keys: `${deviceId}-${playerNumber}-${questionIndex}-${round}`
+- Response metadata includes timestamps, player numbers, round tracking
+
+**Response Management System:**
+- Answer persistence: Students can switch players without losing selections
+- Strategic response clearing when navigating backwards to prevent double-counting
+- Multi-round tracking: Same question can have different responses per round
+- Device identification via localStorage for response attribution
+
+### WebSocket Real-Time Communication
+- Separate socket rooms: `session-${sessionId}` for students, `admin-${sessionId}` for admin
+- Bidirectional events: Student join/response, admin monitoring
+- State synchronization: All clients receive live updates for phase transitions
+- Event data includes question content, round numbers, and correct answers
 
 ### Current Implementation Status
+- **Core Features**: ✅ Complete three-phase quiz system with correct answer revelation
+- **Question Types**: ✅ Multiple choice, free text, and mixed mode support
+- **Admin Controls**: ✅ Three separate admin interfaces with full functionality
+- **Student Experience**: ✅ Visual feedback, answer highlighting, and educational messaging
 - **Data Persistence**: Currently uses in-memory storage (data lost on server restart)
 - **Scalability**: Limited to single server instance due to in-memory storage
-- **Production Ready**: Requires database integration for persistent storage
+- **Production Ready**: Deployed on AWS EC2 with PM2, requires database for long-term persistence
 - **Security**: Basic session-based access, no authentication system
+
+### Feature Implementation Summary
+**✅ Completed Features:**
+- Three-phase quiz flow (Individual → Group → Answer Reveal)
+- Three question types: Multiple choice, free text only, mixed mode
+- Correct answer selection and storage with validation
+- Visual answer feedback with correct/incorrect highlighting
+- Back navigation for questions and rounds with response clearing
+- Real-time synchronization between admin and student interfaces
+- Three distinct admin interfaces: creator, dashboard, and React client
+- Dynamic question building with live preview
+- Production deployment with PM2 process management
+- WSL development environment compatibility
+
+**📋 Potential Enhancements:**
+- Database integration for persistent storage (PostgreSQL/MongoDB)
+- User authentication and session management
+- Advanced analytics and reporting dashboard
+- Question bank and template system
+- Mobile app development for better device support
+- Automated testing suite for backend and frontend
+- Performance optimization for large classroom sizes (50+ students)
 
 ## Deployment Options
 
 ### Local Development
 - Frontend: http://localhost:3000
-- Backend: http://localhost:3001
+- Backend: http://localhost:8000
 
 ### Production (AWS EC2)
 - Single EC2 t2.micro instance (free tier)

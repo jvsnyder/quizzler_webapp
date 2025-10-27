@@ -5,14 +5,16 @@ const SessionCreator = ({ onCreateSession }) => {
   const [questions, setQuestions] = useState([{
     questionText: '',
     answerOptions: ['', ''],
-    correctAnswer: 0
+    correctAnswer: 0,
+    hasFreetextOption: false
   }]);
 
   const addQuestion = () => {
     setQuestions([...questions, {
       questionText: '',
       answerOptions: ['', ''],
-      correctAnswer: 0
+      correctAnswer: 0,
+      hasFreetextOption: false
     }]);
   };
 
@@ -75,7 +77,8 @@ const SessionCreator = ({ onCreateSession }) => {
       questions: questions.map(q => ({
         questionText: q.questionText.trim(),
         answerOptions: q.answerOptions.map(option => option.trim()),
-        correctAnswer: q.correctAnswer
+        correctAnswer: q.correctAnswer,
+        hasFreetextOption: q.hasFreetextOption
       }))
     });
   };
@@ -157,9 +160,33 @@ const SessionCreator = ({ onCreateSession }) => {
                 </div>
               ))}
               
-              <p style={{ fontSize: '14px', color: '#666', marginTop: '8px', marginBottom: '8px' }}>
-                Select the radio button next to the correct answer
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', marginBottom: '8px' }}>
+                <p style={{ fontSize: '14px', color: '#666', margin: '0' }}>
+                  Select the radio button next to the correct answer
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                  <input
+                    type="checkbox"
+                    checked={question.hasFreetextOption}
+                    onChange={(e) => updateQuestion(questionIndex, 'hasFreetextOption', e.target.checked)}
+                  />
+                  Allow "Other (specify)" option
+                </label>
+              </div>
+              
+              {question.hasFreetextOption && (
+                <div style={{ 
+                  background: '#f8f9fa', 
+                  padding: '12px', 
+                  borderRadius: '6px', 
+                  border: '1px solid #dee2e6',
+                  marginBottom: '8px'
+                }}>
+                  <p style={{ fontSize: '14px', color: '#666', margin: '0', fontStyle: 'italic' }}>
+                    ✓ Students will see an additional "Other (specify)" option where they can enter custom text
+                  </p>
+                </div>
+              )}
               
               {question.answerOptions.length < 6 && (
                 <button

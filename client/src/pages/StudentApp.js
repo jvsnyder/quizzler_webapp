@@ -20,7 +20,8 @@ const StudentApp = () => {
     currentQuestionIndex: -1,
     currentRound: 1,
     correctAnswer: null,
-    answers: {} // stores answers for both players
+    answers: {}, // stores answers for both players
+    freetextInputs: {} // stores custom text for "Other" options
   });
 
   useEffect(() => {
@@ -47,7 +48,8 @@ const StudentApp = () => {
         currentQuestionIndex: data.questionIndex,
         currentRound: data.round,
         phase: 'answering',
-        answers: {}
+        answers: {},
+        freetextInputs: {}
       }));
     });
 
@@ -59,7 +61,8 @@ const StudentApp = () => {
         currentRound: data.round,
         phase: 'answering',
         correctAnswer: null,
-        answers: {}
+        answers: {},
+        freetextInputs: {}
       }));
     });
 
@@ -76,6 +79,9 @@ const StudentApp = () => {
         ...prev,
         currentRound: data.round,
         correctAnswer: data.correctAnswer,
+        isFreetext: data.isFreetext,
+        freetextResponses: data.freetextResponses,
+        otherResponses: data.otherResponses,
         phase: 'answer-revealed'
       }));
     });
@@ -118,12 +124,33 @@ const StudentApp = () => {
     }));
   };
 
+  const updateFreetextInput = (text) => {
+    const { currentPlayer, currentQuestionIndex, currentRound } = gameState;
+    const inputKey = `player${currentPlayer}_q${currentQuestionIndex}_r${currentRound}`;
+    
+    setGameState(prev => ({
+      ...prev,
+      freetextInputs: {
+        ...prev.freetextInputs,
+        [inputKey]: text
+      }
+    }));
+  };
+
   const submitAnswer = async () => {
-    const { currentPlayer, currentQuestionIndex, currentRound, answers } = gameState;
+    const { currentPlayer, currentQuestionIndex, currentRound, answers, freetextInputs, currentQuestion } = gameState;
     const answerKey = `player${currentPlayer}_q${currentQuestionIndex}_r${currentRound}`;
+    const inputKey = `player${currentPlayer}_q${currentQuestionIndex}_r${currentRound}`;
     const selectedAnswer = answers[answerKey];
 
-    if (selectedAnswer === undefined) return;
+    if (selectedAnswer === undefined || selectedAnswer === '') return;
+
+    // For "Other" option, check if custom text is provided
+    const isOtherOption = currentQuestion?.hasFreetextOption && selectedAnswer === currentQuestion.answerOptions.length;
+    if (isOtherOption) {
+      const customText = freetextInputs[inputKey];
+      if (!customText || customText.trim() === '') return;
+    }
 
     try {
       await fetch(`/api/sessions/${sessionId}/submit`, {
@@ -136,7 +163,8 @@ const StudentApp = () => {
           playerNumber: currentPlayer,
           questionIndex: currentQuestionIndex,
           round: currentRound,
-          selectedAnswer
+          selectedAnswer: isOtherOption ? freetextInputs[inputKey] : selectedAnswer,
+          isOtherOption: isOtherOption
         }),
       });
 
@@ -228,23 +256,121 @@ const StudentApp = () => {
           <div className="question-text">
             {currentQuestion?.questionText}
           </div>
-
-          <div className="answer-options">
-            {currentQuestion?.answerOptions.map((option, index) => (
-              <button
-                key={index}
-                className={`btn btn-large btn-block answer-option ${currentAnswer === index ? 'selected' : ''}`}
-                onClick={() => selectAnswer(index)}
-              >
-                {option}
-              </button>
-            ))}
+          
+          <div style={{ background: 'red', color: 'white', padding: '10px', margin: '10px 0' }}>
+            🔴 REACT UPDATE TEST - If you see this, React is updating
           </div>
+          
+          {/* Debug info - remove after fixing */}
+          <div style={{ fontSize: '12px', color: '#666', margin: '8px 0', padding: '8px', background: '#f0f0f0' }}>
+            Debug: hasFreetextOption = {String(currentQuestion?.hasFreetextOption)}, 
+            isFreetext = {String(currentQuestion?.isFreetext)}
+            <br/>Question data: {JSON.stringify(currentQuestion, null, 2)}
+          </div>
+
+          {currentQuestion?.isFreetext ? (
+            <div className="answer-options">
+              <textarea
+                className="form-input form-textarea"
+                value={currentAnswer || ''}
+                onChange={(e) => {
+                  const { currentPlayer, currentQuestionIndex, currentRound } = gameState;
+                  const answerKey = `player${currentPlayer}_q${currentQuestionIndex}_r${currentRound}`;
+                  setGameState(prev => ({
+                    ...prev,
+                    answers: {
+                      ...prev.answers,
+                      [answerKey]: e.target.value
+                    }
+                  }));
+                }}
+                placeholder="Enter your answer here..."
+                style={{
+                  width: '100%',
+                  minHeight: '120px',
+                  fontSize: '16px',
+                  padding: '16px',
+                  border: '2px solid #ddd',
+                  borderRadius: '8px',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+          ) : (
+            <div className="answer-options">
+              {currentQuestion?.answerOptions.map((option, index) => (
+                <button
+                  key={index}
+                  className={`btn btn-large btn-block answer-option ${currentAnswer === index ? 'selected' : ''}`}
+                  onClick={() => selectAnswer(index)}
+                >
+                  {option}
+                </button>
+              ))}
+              
+              {/* FORCED FREE TEXT - ALWAYS SHOW */}
+              <div style={{ marginTop: '16px', background: 'yellow', padding: '16px' }}>
+                <h4 style={{ margin: '0 0 12px 0', color: 'red' }}>🔴 FORCED FREE TEXT INPUT:</h4>
+                <textarea
+                  style={{ width: '100%', minHeight: '80px', fontSize: '16px', padding: '12px' }}
+                  placeholder="Type your answer here..."
+                />
+              </div>
+              
+              {(currentQuestion?.hasFreetextOption || true) && (
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ 
+                    padding: '16px', 
+                    backgroundColor: '#f8f9fa', 
+                    borderRadius: '8px',
+                    border: '2px solid #dee2e6',
+                    marginBottom: '12px'
+                  }}>
+                    <h4 style={{ margin: '0 0 12px 0', color: '#495057' }}>Or enter your own response:</h4>
+                    <textarea
+                      className="form-input form-textarea"
+                      value={gameState.freetextInputs[`player${gameState.currentPlayer}_q${gameState.currentQuestionIndex}_r${gameState.currentRound}`] || ''}
+                      onChange={(e) => {
+                        updateFreetextInput(e.target.value);
+                        // Auto-select this option when text is entered
+                        if (e.target.value.trim()) {
+                          selectAnswer(currentQuestion.answerOptions.length);
+                        }
+                      }}
+                      placeholder="Type your own answer here..."
+                      style={{
+                        width: '100%',
+                        minHeight: '80px',
+                        fontSize: '16px',
+                        padding: '12px',
+                        border: currentAnswer === currentQuestion.answerOptions.length ? '2px solid #007bff' : '2px solid #ddd',
+                        borderRadius: '8px',
+                        resize: 'vertical'
+                      }}
+                    />
+                    {currentAnswer === currentQuestion.answerOptions.length && (
+                      <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: '#007bff', fontWeight: '600' }}>
+                        ✓ Your custom response is selected
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             className="btn btn-large btn-block btn-success"
             onClick={submitAnswer}
-            disabled={currentAnswer === undefined}
+            disabled={
+              currentAnswer === undefined || 
+              currentAnswer === '' ||
+              (currentQuestion?.isFreetext && currentAnswer.trim() === '') ||
+              (currentQuestion?.hasFreetextOption && 
+               currentAnswer === currentQuestion.answerOptions.length && 
+               (!gameState.freetextInputs[`player${gameState.currentPlayer}_q${gameState.currentQuestionIndex}_r${gameState.currentRound}`] || 
+                gameState.freetextInputs[`player${gameState.currentPlayer}_q${gameState.currentQuestionIndex}_r${gameState.currentRound}`].trim() === ''))
+            }
           >
             Submit Answer
           </button>
@@ -254,14 +380,14 @@ const StudentApp = () => {
   };
 
   const renderAnswerRevealed = () => {
-    const { currentQuestion, correctAnswer, playerCount, currentPlayer } = gameState;
+    const { currentQuestion, correctAnswer, playerCount, currentPlayer, isFreetext, freetextResponses, otherResponses } = gameState;
     const currentAnswer = getCurrentAnswer();
 
     return (
       <div className="student-container">
         <div className="card">
           <div className="round-indicator answer-revealed">
-            Correct Answer Revealed
+            {currentQuestion?.isFreetext || isFreetext ? 'All Responses' : 'Correct Answer Revealed'}
           </div>
 
           {playerCount === 2 && (
@@ -285,37 +411,83 @@ const StudentApp = () => {
             {currentQuestion?.questionText}
           </div>
 
-          <div className="answer-options">
-            {currentQuestion?.answerOptions.map((option, index) => {
-              const isCorrect = index === correctAnswer;
-              const wasSelected = currentAnswer === index;
+          {currentQuestion?.isFreetext || isFreetext ? (
+            <div>
+              <div className="status-message status-info" style={{ marginBottom: '16px' }}>
+                <h4>Your Answer:</h4>
+                <p style={{ 
+                  background: '#f8f9fa', 
+                  padding: '12px', 
+                  borderRadius: '8px', 
+                  border: '2px solid #007bff',
+                  fontStyle: 'italic',
+                  margin: '8px 0'
+                }}>
+                  "{currentAnswer || 'No answer submitted'}"
+                </p>
+              </div>
               
-              return (
-                <button
-                  key={index}
-                  className={`btn btn-large btn-block answer-option 
-                    ${isCorrect ? 'correct-answer' : ''} 
-                    ${wasSelected && !isCorrect ? 'selected-wrong' : ''}
-                    ${wasSelected && isCorrect ? 'selected-correct' : ''}
-                  `}
-                  disabled
-                >
-                  {option}
-                  {isCorrect && ' ✓'}
-                  {wasSelected && isCorrect && ' (Your answer)'}
-                  {wasSelected && !isCorrect && ' (Your answer)'}
-                </button>
-              );
-            })}
-          </div>
+              <div className="status-message">
+                <h4>All Class Responses:</h4>
+                {freetextResponses && freetextResponses.length > 0 ? (
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {freetextResponses.map((response, index) => (
+                      <div key={index} style={{
+                        background: '#f8f9fa',
+                        padding: '8px 12px',
+                        margin: '4px 0',
+                        borderRadius: '6px',
+                        borderLeft: '4px solid #007bff'
+                      }}>
+                        <span style={{ fontSize: '14px', color: '#666' }}>
+                          Player {response.playerNumber}:{' '}
+                        </span>
+                        <span style={{ fontStyle: 'italic' }}>
+                          "{response.selectedAnswer}"
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color: '#666', fontStyle: 'italic' }}>No responses submitted yet.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="answer-options">
+                {currentQuestion?.answerOptions.map((option, index) => {
+                  const isCorrect = index === correctAnswer;
+                  const wasSelected = currentAnswer === index;
+                  
+                  return (
+                    <button
+                      key={index}
+                      className={`btn btn-large btn-block answer-option 
+                        ${isCorrect ? 'correct-answer' : ''} 
+                        ${wasSelected && !isCorrect ? 'selected-wrong' : ''}
+                        ${wasSelected && isCorrect ? 'selected-correct' : ''}
+                      `}
+                      disabled
+                    >
+                      {option}
+                      {isCorrect && ' ✓'}
+                      {wasSelected && isCorrect && ' (Your answer)'}
+                      {wasSelected && !isCorrect && ' (Your answer)'}
+                    </button>
+                  );
+                })}
+              </div>
 
-          <div className="status-message">
-            {currentAnswer === correctAnswer ? (
-              <p className="correct-message">🎉 Correct! Well done!</p>
-            ) : (
-              <p className="incorrect-message">The correct answer was: {currentQuestion?.answerOptions[correctAnswer]}</p>
-            )}
-          </div>
+              <div className="status-message">
+                {currentAnswer === correctAnswer ? (
+                  <p className="correct-message">🎉 Correct! Well done!</p>
+                ) : (
+                  <p className="incorrect-message">The correct answer was: {currentQuestion?.answerOptions[correctAnswer]}</p>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="waiting-message" style={{ marginTop: '20px' }}>
             <p>Waiting for teacher to continue...</p>
